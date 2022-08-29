@@ -1,3 +1,8 @@
+# Modified by LWW, Aug-2022
+# x_offset parameter added to account for different SH1106 controller implementations:
+#    The basic SH1106 has a line buffer length of 132 pixels instead of 128. Some implementations
+#    centre the 128-pixel display by adding 2 to the column (x) value when initialising the column counters.
+#    This may result in the display text wrapping at column 126 if the controller handles this differently.
 #
 # MicroPython SH1106 OLED driver, I2C and SPI interfaces
 #
@@ -75,7 +80,6 @@ from micropython import const
 import utime as time
 import framebuf
 
-
 # a few register definitions
 _SET_CONTRAST        = const(0x81)
 _SET_NORM_INV        = const(0xa6)
@@ -89,10 +93,11 @@ _SET_PAGE_ADDRESS    = const(0xB0)
 
 class SH1106(framebuf.FrameBuffer):
 
-    def __init__(self, width, height, external_vcc, rotate=0):
+    def __init__(self, width, height, external_vcc, rotate, x_offset):
         self.width = width
         self.height = height
         self.external_vcc = external_vcc
+        self.x_offset = x_offset # some sh1106 devices require an offset of 2
         self.flip_en = rotate == 180 or rotate == 270
         self.rotate90 = rotate == 90 or rotate == 270
         self.pages = self.height // 8
@@ -152,20 +157,20 @@ class SH1106(framebuf.FrameBuffer):
 
     def show(self, full_update = False):
         # self.* lookups in loops take significant time (~4fps).
-        (w, p, db, rb) = (self.width, self.pages,
-                          self.displaybuf, self.renderbuf)
+        (w, p, db, rb, x_off) = (self.width, self.pages,
+                          self.displaybuf, self.renderbuf, self.x_offset)
         if self.rotate90:
             for i in range(self.bufsize):
                 db[w * (i % p) + (i // p)] = rb[i]
         if full_update:
-            pages_to_update = (1 << self.pages) - 1
+            pages_to_update = (1 << p) - 1
         else:
             pages_to_update = self.pages_to_update
         #print("Updating pages: {:08b}".format(pages_to_update))
-        for page in range(self.pages):
+        for page in range(p):
             if (pages_to_update & (1 << page)):
                 self.write_cmd(_SET_PAGE_ADDRESS | page)
-                self.write_cmd(_LOW_COLUMN_ADDRESS | 2)
+                self.write_cmd(_LOW_COLUMN_ADDRESS | x_off)
                 self.write_cmd(_HIGH_COLUMN_ADDRESS | 0)
                 self.write_data(db[(w*page):(w*page+w)])
         self.pages_to_update = 0
@@ -197,7 +202,7 @@ class SH1106(framebuf.FrameBuffer):
 
     def blit(self, fbuf, x, y, key=-1, palette=None):
         super().blit(fbuf, x, y, key, palette)
-        self.register_updates(y, y+self.height)
+        self.register_updates(y, y+fbuf.height)
 
     def scroll(self, x, y):
         # my understanding is that scroll() does a full screen change
@@ -236,14 +241,14 @@ class SH1106(framebuf.FrameBuffer):
 
 class SH1106_I2C(SH1106):
     def __init__(self, width, height, i2c, res=None, addr=0x3c,
-                 rotate=0, external_vcc=False):
+                 rotate=0, external_vcc=False, x_offset=0):
         self.i2c = i2c
         self.addr = addr
         self.res = res
         self.temp = bytearray(2)
         if res is not None:
             res.init(res.OUT, value=1)
-        super().__init__(width, height, external_vcc, rotate)
+        super().__init__(width, height, external_vcc, rotate, x_offset)
 
     def write_cmd(self, cmd):
         self.temp[0] = 0x80  # Co=1, D/C#=0
@@ -259,8 +264,8 @@ class SH1106_I2C(SH1106):
 
 class SH1106_SPI(SH1106):
     def __init__(self, width, height, spi, dc, res=None, cs=None,
-                 rotate=0, external_vcc=False):
-        self.rate = 10 * 1000 * 1000
+                 rotate=0, external_vcc=False, x_offset=0):
+        self.rate = 10_000_000
         dc.init(dc.OUT, value=0)
         if res is not None:
             res.init(res.OUT, value=0)
@@ -269,8 +274,8 @@ class SH1106_SPI(SH1106):
         self.spi = spi
         self.dc = dc
         self.res = res
-        self.cs = cs
-        super().__init__(width, height, external_vcc, rotate)
+        self.cs = cs # if no active CS is provided, the CS pin on the display device should be grounded.
+        super().__init__(width, height, external_vcc, rotate, x_offset)
 
     def write_cmd(self, cmd):
         self.spi.init(baudrate=self.rate, polarity=0, phase=0)
@@ -298,3 +303,4 @@ class SH1106_SPI(SH1106):
 
     def reset(self):
         super().reset(self.res)
+        
