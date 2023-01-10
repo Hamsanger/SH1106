@@ -1,4 +1,4 @@
-# Modified by LWW, Aug-2022
+# Modified by LWW, Jan-2023
 # x_offset parameter added to account for different SH1106 controller implementations:
 #    The basic SH1106 has a line buffer length of 132 pixels instead of 128. Some implementations
 #    centre the 128-pixel display by adding 2 to the column (x) value when initialising the column counters.
