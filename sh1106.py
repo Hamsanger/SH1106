@@ -93,10 +93,11 @@ _SET_PAGE_ADDRESS    = const(0xB0)
 
 class SH1106(framebuf.FrameBuffer):
 
-    def __init__(self, width, height, external_vcc, rotate=0, x_offset=0):
+    def __init__(self, width, height, external_vcc, rotate=0, delay=0, x_offset=0):
         self.width = width
         self.height = height
         self.external_vcc = external_vcc
+        self.delay = delay
         self.x_offset = x_offset # some sh1106 devices require an offset of 2
         self.flip_en = rotate == 180 or rotate == 270
         self.rotate90 = rotate == 90 or rotate == 270
