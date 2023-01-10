@@ -93,7 +93,7 @@ _SET_PAGE_ADDRESS    = const(0xB0)
 
 class SH1106(framebuf.FrameBuffer):
 
-    def __init__(self, width, height, external_vcc, rotate, x_offset):
+    def __init__(self, width, height, external_vcc, rotate=0, x_offset=0):
         self.width = width
         self.height = height
         self.external_vcc = external_vcc
