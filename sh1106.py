@@ -124,6 +124,7 @@ class SH1106(framebuf.FrameBuffer):
     def init_display(self):
         self.reset()
         self.fill(0)
+        self.show()
         self.poweron()
         # rotate90 requires a call to flip() for setting up.
         self.flip(self.flip_en)
@@ -133,6 +134,8 @@ class SH1106(framebuf.FrameBuffer):
 
     def poweron(self):
         self.write_cmd(_SET_DISP | 0x01)
+        if self.delay:
+            time.sleep_ms(self.delay)
 
     def flip(self, flag=None, update=True):
         if flag is None:
@@ -175,10 +178,13 @@ class SH1106(framebuf.FrameBuffer):
                 self.write_data(db[(w*page):(w*page+w)])
         self.pages_to_update = 0
 
-    def pixel(self, x, y, color):
-        super().pixel(x, y, color)
-        page = y // 8
-        self.pages_to_update |= 1 << page
+    def pixel(self, x, y, color=None):
+        if color is None:
+            return super().pixel(x, y)
+        else:
+            super().pixel(x, y , color)
+            page = y // 8
+            self.pages_to_update |= 1 << page
 
     def text(self, text, x, y, color=1):
         super().text(text, x, y, color)
@@ -194,7 +200,7 @@ class SH1106(framebuf.FrameBuffer):
 
     def vline(self, x, y, h, color):
         super().vline(x, y, h, color)
-        self.register_updates(y, y+h)
+        self.register_updates(y, y+h-1)
 
     def fill(self, color):
         super().fill(color)
@@ -211,11 +217,11 @@ class SH1106(framebuf.FrameBuffer):
 
     def fill_rect(self, x, y, w, h, color):
         super().fill_rect(x, y, w, h, color)
-        self.register_updates(y, y+h)
+        self.register_updates(y, y+h-1)
 
     def rect(self, x, y, w, h, color):
         super().rect(x, y, w, h, color)
-        self.register_updates(y, y+h)
+        self.register_updates(y, y+h-1)
 
     def register_updates(self, y0, y1=None):
         # this function takes the top and optional bottom address of the changes made
@@ -241,11 +247,12 @@ class SH1106(framebuf.FrameBuffer):
 
 class SH1106_I2C(SH1106):
     def __init__(self, width, height, i2c, res=None, addr=0x3c,
-                 rotate=0, external_vcc=False, x_offset=0):
+                 rotate=0, external_vcc=False, delay=0, x_offset=0):
         self.i2c = i2c
         self.addr = addr
         self.res = res
         self.temp = bytearray(2)
+        self.delay = delay
         if res is not None:
             res.init(res.OUT, value=1)
         super().__init__(width, height, external_vcc, rotate, x_offset)
@@ -264,8 +271,7 @@ class SH1106_I2C(SH1106):
 
 class SH1106_SPI(SH1106):
     def __init__(self, width, height, spi, dc, res=None, cs=None,
-                 rotate=0, external_vcc=False, x_offset=0):
-        self.rate = 10_000_000
+                 rotate=0, external_vcc=False, delay=0, x_offset=0):
         dc.init(dc.OUT, value=0)
         if res is not None:
             res.init(res.OUT, value=0)
@@ -275,10 +281,10 @@ class SH1106_SPI(SH1106):
         self.dc = dc
         self.res = res
         self.cs = cs # if no active CS is provided, the CS pin on the display device should be grounded.
+        self.delay = delay
         super().__init__(width, height, external_vcc, rotate, x_offset)
 
     def write_cmd(self, cmd):
-        self.spi.init(baudrate=self.rate, polarity=0, phase=0)
         if self.cs is not None:
             self.cs(1)
             self.dc(0)
@@ -290,7 +296,6 @@ class SH1106_SPI(SH1106):
             self.spi.write(bytearray([cmd]))
 
     def write_data(self, buf):
-        self.spi.init(baudrate=self.rate, polarity=0, phase=0)
         if self.cs is not None:
             self.cs(1)
             self.dc(1)
